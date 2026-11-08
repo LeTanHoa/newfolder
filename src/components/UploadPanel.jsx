@@ -4,40 +4,26 @@ export default function UploadPanel({
   activePage,
   isDragging,
   isProcessing,
-  inventoryTemplateName,
   inventoryDataName,
-  templateHandle,
   negativeTemplateName,
-  supplierListName,
   negativeFileNames,
+  bmiExcludedSuppliers,
   onDraggingChange,
   onFile,
-  onSelectInventoryTemplate,
-  onInventoryTemplateFile,
   onInventoryData,
-  onInventoryPermissionDenied,
-  onSelectNegativeTemplate,
-  onSelectSupplierList,
+  onNegativeTemplateFile,
   onNegativeDataFile,
+  onBmiExcludedSuppliersChange,
   onProcessNegativeReport,
-  onNegativeTemplateFallback,
-  onSupplierListFallback,
 }) {
   if (activePage === 'inventory') {
     return (
       <section className="upload-panel inventory-upload">
-        <div className="upload-copy"><div className="upload-icon">↑</div><div><h2>Cập nhật báo cáo tồn kho theo ngày</h2><p>File mẫu được nhớ lại; import thêm dữ liệu để cập nhật trực tiếp</p></div></div>
-        <button type="button" className="drop-zone" onClick={onSelectInventoryTemplate}><span>▣ {inventoryTemplateName ? 'Đổi file template' : 'Chọn file báo cáo'}</span><small>{inventoryTemplateName || 'Chọn file template .XLSX hoặc .XLS'}</small></button>
-        <input id="inventory-template-fallback" hidden type="file" accept=".xlsx,.xls" onChange={(event) => onInventoryTemplateFile(event.target.files[0])} />
+        <div className="upload-copy"><div className="upload-icon">↑</div><div><h2>Cập nhật báo cáo tồn kho theo ngày</h2><p>Chỉ cần import file dữ liệu, hệ thống tự tổng hợp theo Mã 5NH</p></div></div>
         <label className="drop-zone">
           <input
             type="file"
             accept=".xlsx,.xls,.csv"
-            onClick={async () => {
-              if (!templateHandle?.requestPermission) return
-              const permission = await templateHandle.requestPermission({ mode: 'readwrite' })
-              if (permission !== 'granted') onInventoryPermissionDenied()
-            }}
             onChange={(event) => onInventoryData(event.target.files[0])}
           />
           <span>↑ {inventoryDataName ? 'Đổi file dữ liệu' : 'Import dữ liệu tồn kho'}</span>
@@ -50,10 +36,13 @@ export default function UploadPanel({
   if (activePage === 'negative') {
     return (
       <section className="upload-panel negative-upload">
-        <div className="upload-copy"><div className="upload-icon">↑</div><div><h2>Cập nhật báo cáo tồn kho âm</h2><p>Import 4 file dữ liệu + template và file cố định DS NCC TT THEO BCBH</p></div></div>
+        <div className="upload-copy"><div className="upload-icon">↑</div><div><h2>Cập nhật báo cáo tồn kho âm</h2><p>Import 4 file dữ liệu và template báo cáo</p></div></div>
         <div className="negative-upload-grid">
-          <button type="button" className="drop-zone" onClick={onSelectNegativeTemplate}><span>▣ {negativeTemplateName ? 'Đổi template' : 'Chọn template báo cáo'}</span><small>{negativeTemplateName || 'File .XLSX có sheet ALL, TONG HOP...'}</small></button>
-          <button type="button" className="drop-zone" onClick={onSelectSupplierList}><span>▣ {supplierListName ? 'Đổi DS NCC' : 'DS NCC TT THEO BCBH'}</span><small>{supplierListName || 'File cố định, chỉ chọn 1 lần'}</small></button>
+          <label className="drop-zone">
+            <input type="file" accept=".xlsx" onChange={(event) => onNegativeTemplateFile(event.target.files[0])} />
+            <span>▣ {negativeTemplateName ? 'Đổi template' : 'Chọn template báo cáo'}</span>
+            <small>{negativeTemplateName || 'File .XLSX có sheet ALL, TONG HOP...'}</small>
+          </label>
           {Object.entries(negativeFileLabels).map(([key, label]) => (
             <label key={key} className="drop-zone">
               <input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => onNegativeDataFile(key, event.target.files[0])} />
@@ -61,10 +50,18 @@ export default function UploadPanel({
               <small>{negativeFileNames[key] || label}</small>
             </label>
           ))}
+          <label className="negative-sku-exclusion">
+            <span>NCC loại khỏi TON KHO BMI</span>
+            <input
+              type="text"
+              value={bmiExcludedSuppliers}
+              onChange={(event) => onBmiExcludedSuppliersChange(event.target.value)}
+              placeholder="Nhập NCC, phân cách bằng dấu phẩy hoặc xuống dòng"
+            />
+            <small>Mặc định vẫn loại NCC 17203 và 22478; nhập thêm NCC nếu cần.</small>
+          </label>
         </div>
         <button type="button" className="export-button negative-run-button" disabled={isProcessing} onClick={onProcessNegativeReport}>Cập nhật báo cáo tồn âm</button>
-        <input id="negative-template-fallback" hidden type="file" accept=".xlsx" onChange={(event) => onNegativeTemplateFallback(event.target.files[0])} />
-        <input id="supplier-list-fallback" hidden type="file" accept=".xlsx,.xls" onChange={(event) => onSupplierListFallback(event.target.files[0])} />
       </section>
     )
   }

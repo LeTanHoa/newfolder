@@ -320,16 +320,23 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
   const manccCol = findColumnInSheet(allSheet, ['Mã NCC', 'Ma NCC'], allHeader.row)
   const supplierNameCol = findColumnInSheet(allSheet, ['Nhà cung cấp', 'Ten NCC', 'Tên NCC'], allHeader.row)
 
-  // TON KHO BMI lấy trực tiếp từ FILE Tồn kho đầu ngày, không dùng sheet ALL của template.
-  // Chỉ Mã 5NH = 6, bỏ NCC 17203 và 22478.
+  // TON KHO BMI lấy từ sheet ALL sau khi đổ dữ liệu của SKU TON AM NEW.
+  // Chỉ Mã 5NH = 6, bỏ NCC 17203 và 22478, đồng thời bỏ thêm NCC người dùng nhập.
   let bmiInventoryTotal = 0
   if (bmiSheet) {
-    const bmiSource = findTabularSource(files.beginningStock, {
-      codeCol: ['Mã 5NH', 'Ma 5NH', 'Mã 5 NH'],
-      supplierCol: ['Mã NCC', 'Ma NCC'],
-      valueCol: ['Trị Giá Tồn Hiện Tại', 'Tri Gia Ton Hien Tai'],
-    })
-    if (!bmiSource) throw new Error('File Tồn kho đầu ngày thiếu cột Mã 5NH, Mã NCC hoặc Trị Giá Tồn Hiện Tại')
+    const bmiHeader = findHeaderInSheet(allSheet, ['SKU'])
+    const bmiCodeColumn = bmiHeader && findColumnInSheet(allSheet, ['Mã 5NH', 'Ma 5NH', 'Mã 5 NH'], bmiHeader.row)
+    const bmiSupplierColumn = bmiHeader && findColumnInSheet(allSheet, ['Mã NCC', 'Ma NCC'], bmiHeader.row)
+    const bmiValueColumn = bmiHeader && findColumnInSheet(allSheet, ['Trị Giá Tồn Hiện Tại', 'Tri Gia Ton Hien Tai'], bmiHeader.row)
+    const bmiSource = bmiHeader && {
+      headers: allSheet.getRow(bmiHeader.row).values.slice(1).map((value) => getCellText({ value })),
+      rows: Array.from({ length: getLastRow(allSheet) }, (_, index) => allSheet.getRow(index + 1).values.slice(1)),
+      headerRow: bmiHeader.row - 1,
+      codeCol: bmiCodeColumn - 1,
+      supplierCol: bmiSupplierColumn - 1,
+      valueCol: bmiValueColumn - 1,
+    }
+    if (!bmiSource || bmiSource.codeCol < 0 || bmiSource.supplierCol < 0 || bmiSource.valueCol < 0) throw new Error('Sheet SKU TON AM NEW thiếu cột Mã 5NH, Mã NCC hoặc Trị Giá Tồn Hiện Tại')
 
     // Chép cả tiêu đề cột từ nguồn để tiêu đề luôn đồng nhất với dữ liệu xuất ra.
     clearSheetValues(bmiSheet)
@@ -337,13 +344,14 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
     const sourceToTargetColumns = bmiSource.headers.map((_, sourceCol) => ({ sourceCol, targetCol: sourceCol + 1 }))
     const bmiValueCol = bmiSource.valueCol + 1
 
-    const excludedBmiSuppliers = new Set(['17203', '22478'])
+    const excludedBmiSuppliers = new Set(['17203', '22478', ...String(files.bmiExcludedSuppliers || '').split(/[\n,;]+/).map((supplier) => getNormalizedSupplierCode(supplier)).filter(Boolean)])
     let bmiOutputRow = 2
     for (let row = bmiSource.headerRow + 1; row < bmiSource.rows.length; row += 1) {
       const sourceRow = bmiSource.rows[row]
-      const code5 = String(toNumber(sourceRow[bmiSource.codeCol]))
-      const supplierCode = String(toNumber(sourceRow[bmiSource.supplierCol]))
-      if (code5 !== '6' || excludedBmiSuppliers.has(supplierCode)) continue
+      const code5 = String(sourceRow[bmiSource.codeCol] ?? '').trim().toUpperCase().replace(/\s+/g, '')
+      const supplierCode = getNormalizedSupplierCode(sourceRow[bmiSource.supplierCol])
+      const isBmiCode = code5 === '6' || code5 === 'NH6' || toNumber(code5) === 6
+      if (!isBmiCode || excludedBmiSuppliers.has(supplierCode)) continue
       sourceToTargetColumns.forEach(({ sourceCol, targetCol }) => {
         bmiSheet.getCell(bmiOutputRow, targetCol).value = sourceRow[sourceCol]
       })

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx-js-style'
 import ExcelJS from 'exceljs'
+import defaultNegativeTemplateUrl from '../template/SKU TON AM CM.xlsx'
 import { processNegativeInventoryReport } from './negativeInventory'
 import { inventoryColumns, inventoryGroupNames, marginSheets, negativeFileLabels } from './constants/report'
 import {
@@ -25,11 +26,8 @@ import {
 } from './utils/report'
 import {
   clearTemplateHandle,
-  loadNegativeTemplateHandle,
   loadSupplierListHandle,
   loadTemplateHandle,
-  saveNegativeTemplateHandle,
-  saveSupplierListHandle,
   saveTemplateHandle,
 } from './services/fileHandleStorage'
 import AppSidebar from './components/layout/AppSidebar'
@@ -128,12 +126,12 @@ function App() {
   const [inventoryDataName, setInventoryDataName] = useState('')
   const [inventoryProcessStatus, setInventoryProcessStatus] = useState('')
   const [templateHandle, setTemplateHandle] = useState(null)
-  const [negativeTemplateHandle, setNegativeTemplateHandle] = useState(null)
+  const [negativeTemplateBytes, setNegativeTemplateBytes] = useState(null)
   const [negativeTemplateName, setNegativeTemplateName] = useState('')
   const [supplierListHandle, setSupplierListHandle] = useState(null)
-  const [supplierListName, setSupplierListName] = useState('')
   const [negativeFileNames, setNegativeFileNames] = useState({ negativeRate: '', beginningStock: '', apparelStock: '', yesterdayStock: '' })
   const [negativeFileBuffers, setNegativeFileBuffers] = useState({ negativeRate: null, beginningStock: null, apparelStock: null, yesterdayStock: null })
+  const [bmiExcludedSuppliers, setBmiExcludedSuppliers] = useState('')
   const [negativeRows, setNegativeRows] = useState([])
   const [negativeGroupCounts, setNegativeGroupCounts] = useState({})
   const [negativeProcessStatus, setNegativeProcessStatus] = useState('')
@@ -145,10 +143,19 @@ function App() {
 
   useEffect(() => { loadTemplateHandle().then(async (handle) => { if (!handle) return; setTemplateHandle(handle); setInventoryTemplateName(handle.name); setInventoryProcessStatus(`Đã nhớ file mẫu: ${handle.name}. Hãy import dữ liệu tồn kho để cập nhật.`) }).catch(() => {}) }, [])
   useEffect(() => {
-    Promise.all([loadNegativeTemplateHandle(), loadSupplierListHandle()]).then(([templateHandleResult, supplierHandleResult]) => {
-      if (templateHandleResult) { setNegativeTemplateHandle(templateHandleResult); setNegativeTemplateName(templateHandleResult.name); setNegativeProcessStatus(`Đã nhớ template tồn âm: ${templateHandleResult.name}.`) }
-      if (supplierHandleResult) { setSupplierListHandle(supplierHandleResult); setSupplierListName(supplierHandleResult.name) }
+    loadSupplierListHandle().then((supplierHandleResult) => {
+      if (supplierHandleResult) setSupplierListHandle(supplierHandleResult)
     }).catch(() => {})
+  }, [])
+  useEffect(() => {
+    fetch(defaultNegativeTemplateUrl)
+      .then((response) => { if (!response.ok) throw new Error('Không tải được template mặc định'); return response.arrayBuffer() })
+      .then((bytes) => {
+        setNegativeTemplateBytes(bytes)
+        setNegativeTemplateName('SKU TON AM CM.xlsx')
+        setNegativeProcessStatus('Đã nạp template tồn âm mặc định. Hãy import các file dữ liệu.')
+      })
+      .catch(() => setNegativeProcessStatus('Không tải được template tồn âm mặc định.'))
   }, [])
   const handleOverviewDateChange = (date) => {
     setOverviewDate(date)
@@ -186,7 +193,7 @@ function App() {
         sales: hasLocalMarginData ? localSales : 0,
         cost: hasLocalMarginData ? localCost : 0,
         profit: hasLocalMarginData ? localSales - localCost : 0,
-        negative: 0,
+        negative: negativeRows.length,
         stockValue: hasLocalInventoryData ? selectedInventoryRows.reduce((sum, row) => sum + row.value, 0) : 0,
         marginRows: selectedMarginRows.length,
         inventoryRows: selectedInventoryRows.length,
@@ -198,7 +205,7 @@ function App() {
         negative: negativeProcessStatus.startsWith('Hoàn tất:'),
       },
     }
-  }, [marginReports, inventoryReports, negativeProcessStatus, overviewDate])
+  }, [marginReports, inventoryReports, negativeProcessStatus, negativeRows, overviewDate])
   const metrics = overviewData.metrics
 
   const handleFile = async (file) => {
@@ -336,64 +343,17 @@ function App() {
       setInventoryRows(rows)
       const inventoryDateKey = getDateInputValue(detectedInventoryDate || inventoryDate)
       setInventoryReports((current) => ({ ...current, [inventoryDateKey]: rows }))
-      let activeTemplate = inventoryTemplate
-      let templateBytes = inventoryTemplateBytes
-      if (!activeTemplate && templateHandle) {
-        const savedFile = await templateHandle.getFile()
-        const savedBytes = await savedFile.arrayBuffer()
-        activeTemplate = XLSX.read(savedBytes, { type: 'array', cellStyles: true, cellDates: true })
-        activeTemplate.__activeSheetName = getActiveSheetName(activeTemplate)
-        setInventoryTemplate(activeTemplate)
-        setInventoryTemplateBytes(savedBytes)
-        templateBytes = savedBytes
-      }
-      if (!activeTemplate) throw new Error('Chưa có file báo cáo template đã lưu')
-      if (!templateHandle) throw new Error('Chưa có quyền ghi file template')
-      const currentTemplateFile = await templateHandle.getFile()
-      templateBytes = await currentTemplateFile.arrayBuffer()
-      setInventoryTemplateBytes(templateBytes)
-      const targetDate = detectedInventoryDate || inventoryDate
-      const updatedTemplateBytes = await writeInventoryValuesWithoutChangingTemplate(templateBytes, rows, targetDate, inventoryDailyTotals)
       setActivePage('inventory')
-      if (templateHandle?.createWritable) {
-        try {
-          const writable = await templateHandle.createWritable()
-          await writable.write(updatedTemplateBytes)
-          await writable.close()
-        } catch (error) {
-          if (error.name === 'InvalidStateError' || error.message.includes('state had changed')) throw new Error('File template đã thay đổi hoặc đang mở trong Excel. Hãy đóng file Excel rồi import lại dữ liệu.')
-          throw error
-        }
-        setInventoryProcessStatus(`Đã cập nhật trực tiếp ${rows.length} dòng vào file ${templateHandle.name}, sheet ${getInventorySheetName(new Date())}. Vui lòng kiểm tra lại file.`)
-      } else {
-        throw new Error('Trình duyệt chưa cấp quyền ghi trực tiếp vào template.xlsx')
-      }
+      setInventoryProcessStatus(`Đã tổng hợp ${rows.length} dòng dữ liệu theo Mã 5NH. Bạn có thể copy dòng ngang hoặc xuất Excel.`)
     } catch (error) { setInventoryProcessStatus(error.message || 'Cập nhật báo cáo thất bại.') }
     finally { setIsProcessing(false) }
   }
 
-  const selectNegativeTemplate = async () => {
-    if (!window.showOpenFilePicker) { document.getElementById('negative-template-fallback')?.click(); return }
-    try {
-      const [handle] = await window.showOpenFilePicker({ types: [{ description: 'Excel template', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }], multiple: false })
-      const file = await handle.getFile()
-      setNegativeTemplateHandle(handle)
-      await saveNegativeTemplateHandle(handle)
-      setNegativeTemplateName(file.name)
-      setNegativeProcessStatus(`Đã chọn template: ${file.name}. Hãy import 4 file dữ liệu.`)
-    } catch { setNegativeProcessStatus('Chưa chọn file template tồn âm.') }
-  }
-
-  const selectSupplierList = async () => {
-    if (!window.showOpenFilePicker) { document.getElementById('supplier-list-fallback')?.click(); return }
-    try {
-      const [handle] = await window.showOpenFilePicker({ types: [{ description: 'Excel', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'], 'application/vnd.ms-excel': ['.xls'] } }], multiple: false })
-      const file = await handle.getFile()
-      setSupplierListHandle(handle)
-      await saveSupplierListHandle(handle)
-      setSupplierListName(file.name)
-      setNegativeProcessStatus(`Đã lưu file cố định DS NCC TT THEO BCBH: ${file.name}`)
-    } catch { setNegativeProcessStatus('Chưa chọn file DS NCC TT THEO BCBH.') }
+  const handleNegativeTemplateFile = async (file) => {
+    if (!file) return
+    setNegativeTemplateBytes(await file.arrayBuffer())
+    setNegativeTemplateName(file.name)
+    setNegativeProcessStatus(`Đã chọn template: ${file.name}. Hãy import 4 file dữ liệu.`)
   }
 
   const handleNegativeDataFile = async (key, file) => {
@@ -407,36 +367,32 @@ function App() {
     setIsProcessing(true)
     setNegativeProcessStatus('Đang cập nhật báo cáo tồn kho âm...')
     try {
-      if (!negativeTemplateHandle) throw new Error('Chưa chọn file template báo cáo tồn âm')
+      if (!negativeTemplateBytes) throw new Error('Chưa chọn file template báo cáo tồn âm')
       const requiredNegativeFiles = ['beginningStock', 'yesterdayStock']
       const missing = requiredNegativeFiles.filter((key) => !negativeFileBuffers[key]).map((key) => negativeFileLabels[key])
       if (missing.length) throw new Error(`Thiếu file: ${missing.join(', ')}`)
 
-      const permission = await negativeTemplateHandle.requestPermission({ mode: 'readwrite' })
-      if (permission !== 'granted') throw new Error('Bạn chưa cấp quyền ghi file template tồn âm')
-
-      const templateFile = await negativeTemplateHandle.getFile()
-      const templateBuffer = await templateFile.arrayBuffer()
-      const result = await processNegativeInventoryReport(templateBuffer, {
+      let supplierList = null
+      if (supplierListHandle) {
+        try { supplierList = await (await supplierListHandle.getFile()).arrayBuffer() } catch { supplierList = null }
+      }
+      const result = await processNegativeInventoryReport(negativeTemplateBytes, {
         negativeRate: negativeFileBuffers.negativeRate,
         beginningStock: negativeFileBuffers.beginningStock,
         apparelStock: negativeFileBuffers.apparelStock,
         yesterdayStock: negativeFileBuffers.yesterdayStock,
         yesterdayStockName: negativeFileNames.yesterdayStock,
-        supplierList: supplierListHandle ? await (await supplierListHandle.getFile()).arrayBuffer() : null,
+        bmiExcludedSuppliers,
+        supplierList,
       })
       setInventoryDailyTotals(result.inventoryDailyTotals)
       window.localStorage.setItem(inventoryDailyTotalsStorageKey, JSON.stringify(result.inventoryDailyTotals))
-
-      const writable = await negativeTemplateHandle.createWritable()
-      await writable.write(result.buffer)
-      await writable.close()
 
       setNegativeRows(result.negativeRows)
       setNegativeGroupCounts(result.groupCounts)
       setNegativeExport({ buffer: result.buffer, fileName: result.exportFileName })
       setActivePage('negative')
-      setNegativeProcessStatus(`Hoàn tất: ${result.negativeCount} SKU còn tồn âm; đã cập nhật ALL, SKU Ton Am Old, SKU TON AM NEW, TONG HOP, TON KHO MM và các sheet theo NH. Bấm “Xuất báo cáo” để tải ${result.exportFileName}.`)
+      setNegativeProcessStatus(`Hoàn tất: ${result.negativeCount} SKU còn tồn âm; đã cập nhật ALL, SKU Ton Am Old, SKU TON AM NEW, TONG HOP, TON KHO MM, TON KHO BMI và các sheet theo NH. Bấm “Xuất báo cáo” để tải ${result.exportFileName}.`)
     } catch (error) {
       setNegativeProcessStatus(error.message || 'Cập nhật báo cáo tồn âm thất bại.')
     } finally { setIsProcessing(false) }
@@ -448,14 +404,10 @@ function App() {
       else setNegativeProcessStatus('Hãy cập nhật báo cáo tồn kho âm trước khi xuất file.')
       return
     }
-    if (activePage === 'inventory' && inventoryRows.length && inventoryTemplate) {
-      XLSX.writeFile(inventoryTemplate, `TON KHO ${formatDate(inventoryDate, false)}.xlsx`)
-      return
-    }
     if (activePage === 'inventory' && inventoryRows.length) {
-      const totals = inventoryRows.reduce((result, row) => { const group = inventoryGroupNames[row.code5] || 'KHÁC'; result[group] = (result[group] || 0) + row.value; return result }, {})
-      const columns = ['Ngày', 'TPTS', 'TPCN', 'HMP', 'DD', 'MM', 'BM', 'Tucano + QUA TET', 'KHÁC', 'Tổng']
-      const values = [formatDate(inventoryDate), ...['TPTS', 'TPCN', 'HMP', 'DD', 'MM', 'BM', 'Tucano + QUA TET', 'KHÁC'].map((group) => totals[group] || 0), Object.values(totals).reduce((sum, value) => sum + value, 0)]
+      const totals = getInventoryValues(inventoryRows, inventoryDailyTotals)
+      const columns = ['Ngày', 'TPTS', 'TPCN', 'HMP', 'DD', 'MM', 'BM', 'BO DAO + QUA TET', 'KHÁC', 'Tổng', 'TỔNG MM', 'Trừ tồn kho S-Dept 146-20', 'DANH SACH NCC BCBH - KO TÍNH TỒN KHO']
+      const values = [formatDate(inventoryDate), totals.TPTS || 0, totals.TPCN || 0, totals.HMP || 0, totals.DD || 0, totals.MM || 0, totals.BM || 0, totals['Tucano + QUA TET'] || 0, totals.KHÁC || 0, ['TPTS', 'TPCN', 'HMP', 'DD', 'MM'].reduce((sum, key) => sum + (totals[key] || 0), 0), totals['TỔNG MM'] || 0, 0, totals['DANH SACH NCC BCBH - KO TÍNH TỒN KHO'] || 0]
       const workbook = XLSX.utils.book_new()
       const sheet = XLSX.utils.aoa_to_sheet([columns, values])
       sheet['!cols'] = columns.map(() => ({ wch: 18 }))
@@ -506,13 +458,13 @@ function App() {
         : ''
 
   const pageContent = activePage === 'overview'
-    ? <OverviewPageView groups={overviewData.groups} metrics={metrics} statuses={overviewData.statuses} selectedDate={overviewDate} onDateChange={handleOverviewDateChange} />
+    ? <OverviewPageView groups={overviewData.groups} metrics={metrics} statuses={overviewData.statuses} dailyTotals={inventoryDailyTotals} selectedDate={overviewDate} onDateChange={handleOverviewDateChange} />
     : activePage === 'margin'
       ? <MarginReportPageView rows={marginRows} rawRows={rawRows} />
       : activePage === 'negative'
         ? <NegativeInventoryPageView negativeRows={negativeRows} rows={rows} negativeGroupCounts={negativeGroupCounts} negativeCount={metrics.negative} />
         : activePage === 'inventory'
-          ? <InventoryReportPageView rows={inventoryRows} date={inventoryDate} />
+          ? <InventoryReportPageView rows={inventoryRows} date={inventoryDate} dailyTotals={inventoryDailyTotals} />
           : <MappingPageView />
 
   return (
@@ -528,28 +480,18 @@ function App() {
           inventoryDataName={inventoryDataName}
           templateHandle={templateHandle}
           negativeTemplateName={negativeTemplateName}
-          supplierListName={supplierListName}
           negativeFileNames={negativeFileNames}
+          bmiExcludedSuppliers={bmiExcludedSuppliers}
           onDraggingChange={setIsDragging}
           onFile={handleFile}
           onSelectInventoryTemplate={selectInventoryTemplate}
           onInventoryTemplateFile={handleInventoryTemplate}
           onInventoryData={handleInventoryData}
           onInventoryPermissionDenied={() => setInventoryProcessStatus('Bạn chưa cấp quyền ghi file template')}
-          onSelectNegativeTemplate={selectNegativeTemplate}
-          onSelectSupplierList={selectSupplierList}
+          onNegativeTemplateFile={handleNegativeTemplateFile}
           onNegativeDataFile={handleNegativeDataFile}
+          onBmiExcludedSuppliersChange={setBmiExcludedSuppliers}
           onProcessNegativeReport={processNegativeReport}
-          onNegativeTemplateFallback={(file) => {
-            if (!file) return
-            setNegativeTemplateName(file.name)
-            setNegativeProcessStatus(`Đã chọn template: ${file.name} (chưa lưu quyền ghi trực tiếp)`)
-          }}
-          onSupplierListFallback={(file) => {
-            if (!file) return
-            setSupplierListName(file.name)
-            setNegativeProcessStatus(`Đã chọn DS NCC: ${file.name}`)
-          }}
         />}
    
         <ProcessBanner status={currentStatus} isProcessing={isProcessing} />

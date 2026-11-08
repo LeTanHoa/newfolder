@@ -1,5 +1,5 @@
 const navigation = [
-  // { page: 'overview', icon: '▦', label: 'Tổng quan' },
+  { page: 'overview', icon: '▦', label: 'Dashboard' },
   // { page: 'upload', icon: '◌', label: 'Nhập dữ liệu', badge: '2' },
   { page: 'margin', icon: '▤', label: 'Báo cáo', section: true },
   { page: 'margin', icon: '◒', label: 'Tỉ lệ lãi', child: true },
