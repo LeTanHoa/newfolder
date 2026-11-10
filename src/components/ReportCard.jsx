@@ -1,11 +1,18 @@
-export default function ReportCard({ title, subtitle, children }) {
+import React from 'react'
+
+export default function ReportCard({ title, subtitle, action, children }) {
   return (
     <div className="report-card">
       <div className="card-heading">
-        <div><h2>{title}</h2><p>{subtitle}</p></div>
-        <button className="ghost-button">Xem chi tiết <span>↗</span></button>
+        <div className="card-heading-info">
+          <h2>{title}</h2>
+          {subtitle && <p>{subtitle}</p>}
+        </div>
+        {action && <div className="card-heading-action">{action}</div>}
       </div>
-      {children}
+      <div className="card-content">
+        {children}
+      </div>
     </div>
   )
 }

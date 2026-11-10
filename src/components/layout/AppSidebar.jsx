@@ -1,37 +1,121 @@
-const navigation = [
-  { page: 'overview', icon: '▦', label: 'Dashboard' },
-  // { page: 'upload', icon: '◌', label: 'Nhập dữ liệu', badge: '2' },
-  { page: 'margin', icon: '▤', label: 'Báo cáo', section: true },
-  { page: 'margin', icon: '◒', label: 'Tỉ lệ lãi', child: true },
-  { page: 'negative', icon: '!', label: 'Tồn kho âm', child: true },
-  { page: 'inventory', icon: '▥', label: 'Tồn kho theo ngày', child: true },
-  // { page: 'overview', icon: '⌁', label: 'Lịch sử xử lý' },
+import React from 'react'
+import {
+  IconDashboard,
+  IconMargin,
+  IconNegative,
+  IconInventory,
+  IconSettings,
+  IconChevronRight
+} from '../icons'
+
+const navGroups = [
+  {
+    title: 'TỔNG QUAN',
+    items: [
+      { page: 'overview', icon: IconDashboard, label: 'Bảng tổng quan', badge: null }
+    ]
+  },
+  {
+    title: 'BÁO CÁO ERP',
+    items: [
+      { page: 'margin', icon: IconMargin, label: 'Tỉ lệ lãi âm', badge: null },
+      { page: 'negative', icon: IconNegative, label: 'Tồn kho âm', badge: 'Mới' },
+      { page: 'inventory', icon: IconInventory, label: 'Tồn kho theo ngày', badge: null }
+    ]
+  },
+  {
+    title: 'HỆ THỐNG',
+    items: [
+      { page: 'mapping', icon: IconSettings, label: 'Cấu hình mapping', badge: null }
+    ]
+  }
 ]
 
-export default function AppSidebar({ activePage, onNavigate }) {
+export default function AppSidebar({ activePage, onNavigate, isCollapsed, onToggleCollapse }) {
   return (
-    <aside className="sidebar">
-      <div className="brand"><span className="brand-mark">↗</span><span>CM ĐÀ NẴNG<span className="brand-dot">.</span></span></div>
-      <p className="workspace-label">WORKSPACE</p>
-      <div className="workspace-switcher"><span className="workspace-avatar">ĐN</span><span><strong>Hệ thống báo cáo</strong><small>CO.OPMART ĐÀ NẴNG</small></span><span className="chevron">⌄</span></div>
-      <nav className="nav-list">
-        {navigation.map(({ page, icon, label, badge, section, child }) => (
-          <button
-            key={`${page}-${label}`}
-            className={`nav-item ${section ? 'nav-section' : ''} ${child ? 'nav-child' : ''} ${activePage === page && !section ? 'active' : ''}`}
-            onClick={() => onNavigate(page)}
-          >
-            <span>{icon}</span> {label} {badge && <em>{badge}</em>}
-          </button>
+    <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
+      {/* Brand Header */}
+      <div className="brand-wrapper">
+        <div className="brand" onClick={() => onNavigate('overview')} role="button" tabIndex={0} title="Về trang tổng quan">
+          <div className="brand-logo">
+            <img src="/logo.png" alt="Co.opmart Đà Nẵng" className="brand-logo-img" />
+          </div>
+          {!isCollapsed && (
+            <div className="brand-text">
+              <span className="brand-title">Siêu Thị Co.opmart</span>
+              <span className="brand-subtitle">CHI NHÁNH ĐÀ NẴNG</span>
+            </div>
+          )}
+        </div>
+        <button 
+          type="button" 
+          className="collapse-toggle-btn"
+          onClick={onToggleCollapse}
+          title={isCollapsed ? "Mở rộng thanh menu" : "Thu gọn thanh menu"}
+          aria-label="Toggle sidebar"
+        >
+          <span className={`toggle-arrow ${isCollapsed ? 'collapsed' : ''}`}>‹</span>
+        </button>
+      </div>
+
+      {/* Navigation List */}
+      <nav className="nav-container">
+        {navGroups.map((group) => (
+          <div key={group.title} className="nav-group">
+            {!isCollapsed && <p className="nav-group-title">{group.title}</p>}
+            <div className="nav-group-items">
+              {group.items.map(({ page, icon: Icon, label, badge }) => {
+                const isActive = activePage === page
+                return (
+                  <button
+                    key={page}
+                    type="button"
+                    className={`nav-button ${isActive ? 'active' : ''}`}
+                    onClick={() => onNavigate(page)}
+                    title={isCollapsed ? label : undefined}
+                  >
+                    <span className="nav-button-icon">
+                      <Icon size={18} />
+                    </span>
+                    {!isCollapsed && (
+                      <>
+                        <span className="nav-button-label">{label}</span>
+                        {badge && <span className="nav-badge">{badge}</span>}
+                        {isActive && <IconChevronRight size={14} className="nav-active-arrow" />}
+                      </>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         ))}
-        {/* <p className="workspace-label nav-heading">QUẢN TRỊ</p>
-        <button className={`nav-item ${activePage === 'mapping' ? 'active' : ''}`} onClick={() => onNavigate('mapping')}><span>⚙</span> Cấu hình mapping</button> */}
-        {/* <button className="nav-item" onClick={() => onNavigate('overview')}><span>♙</span> Người dùng</button> */}
       </nav>
-      {/* <div className="sidebar-bottom">
-        <div className="help-box"><span className="help-icon">?</span><div><strong>Cần trợ giúp?</strong><small>Xem tài liệu hướng dẫn</small></div><span>→</span></div>
-        <div className="user-row"><span className="user-avatar">LTH</span><span><strong>Lê Tấn Hòa</strong><small>Admin</small></span><span className="more">•••</span></div>
-      </div> */}
+
+      {/* Sidebar Footer */}
+      {!isCollapsed ? (
+        <div className="sidebar-footer">
+          <div className="system-status-card">
+            <div className="status-header">
+              <span className="status-dot-pulse"></span>
+              <span className="status-title">Hệ thống sẵn sàng</span>
+            </div>
+            <p className="status-desc">Hỗ trợ ExcelJS, xlsx-js-style và ERP dump tự động.</p>
+          </div>
+
+          <div className="user-profile-bar">
+            <div className="user-avatar-circle">AD</div>
+            <div className="user-details">
+              <strong>Admin Phân Tích</strong>
+              <small>bophan.ketoan@cm.vn</small>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="sidebar-footer-collapsed">
+          <div className="status-dot-only" title="Hệ thống trực tuyến"></div>
+        </div>
+      )}
     </aside>
   )
 }

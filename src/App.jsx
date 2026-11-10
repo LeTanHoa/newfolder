@@ -113,6 +113,7 @@ const getDateInputValue = (date) => {
 
 function App() {
   const [activePage, setActivePage] = useState('overview')
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [rows, setRows] = useState([])
   const [marginReports, setMarginReports] = useState({})
   const [rawRows, setRawRows] = useState([])
@@ -120,8 +121,8 @@ function App() {
   const [inventoryRows, setInventoryRows] = useState([])
   const [inventoryReports, setInventoryReports] = useState({})
   const [inventoryDate, setInventoryDate] = useState(() => new Date())
-  const [inventoryTemplate, setInventoryTemplate] = useState(null)
-  const [inventoryTemplateBytes, setInventoryTemplateBytes] = useState(null)
+  const [_inventoryTemplate, setInventoryTemplate] = useState(null)
+  const [_inventoryTemplateBytes, setInventoryTemplateBytes] = useState(null)
   const [inventoryTemplateName, setInventoryTemplateName] = useState('template.xlsx')
   const [inventoryDataName, setInventoryDataName] = useState('')
   const [inventoryProcessStatus, setInventoryProcessStatus] = useState('')
@@ -160,7 +161,7 @@ function App() {
   const handleOverviewDateChange = (date) => {
     setOverviewDate(date)
   }
-  const [sourceDate, setSourceDate] = useState(new Date(2026, 7, 20))
+  const [sourceDate, setSourceDate] = useState(() => new Date())
   const [isDragging, setIsDragging] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [processStatus, setProcessStatus] = useState('')
@@ -301,7 +302,7 @@ function App() {
     return workbook
   }
 
-  const writeInventoryValuesWithoutChangingTemplate = async (bytes, rows, targetDate = inventoryDate, dailyTotals = inventoryDailyTotals) => {
+  const _writeInventoryValuesWithoutChangingTemplate = async (bytes, rows, targetDate = inventoryDate, dailyTotals = inventoryDailyTotals) => {
     const workbook = new ExcelJS.Workbook()
     try { await workbook.xlsx.load(bytes) } catch {
       const fallbackWorkbook = XLSX.read(bytes, { type: 'array', cellStyles: true, cellDates: true })
@@ -468,37 +469,87 @@ function App() {
           : <MappingPageView />
 
   return (
-    <div className="app-shell">
-      <AppSidebar activePage={activePage} onNavigate={goTo} />
-      <main className="main-content">
-        <AppHeader activePage={activePage} sourceDate={sourceDate} inventoryDate={inventoryDate} onExport={exportReport} />
-        {activePage !== 'overview' && <UploadPanel
+    <>
+      {/* Thông báo chuyên dụng khi vào bằng thiết bị di động / màn hình nhỏ */}
+      <div className="mobile-screen-notice">
+        <div className="mobile-notice-card">
+          <div className="notice-icon-circle">
+            <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+          </div>
+          <span className="notice-badge">HỆ THỐNG CO.OPMART ĐÀ NẴNG</span>
+          <h2>Hệ thống tối ưu cho Máy tính (Desktop/Laptop)</h2>
+          <p>
+            Hệ thống Báo cáo & Xử lý Dữ liệu ERP được thiết kế chuyên dụng cho màn hình máy tính để xử lý bảng tính Excel dung lượng lớn, bóc tách và đối chiếu số liệu đa chiều.
+          </p>
+          <div className="notice-guide-box">
+            <strong>Vui lòng mở ứng dụng trên máy tính</strong>
+            <small>Để sử dụng đầy đủ các tính năng nhập file, bóc tách dữ liệu và xuất báo cáo.</small>
+          </div>
+          <div className="notice-footer-meta">
+            <span>Co.opmart Đà Nẵng · ERP Reporting v2.0</span>
+          </div>
+        </div>
+      </div>
+
+      <div className={`app-shell ${isSidebarCollapsed ? 'sidebar-is-collapsed' : ''}`}>
+        <AppSidebar
           activePage={activePage}
-          isDragging={isDragging}
-          isProcessing={isProcessing}
-          inventoryTemplateName={inventoryTemplateName}
-          inventoryDataName={inventoryDataName}
-          templateHandle={templateHandle}
-          negativeTemplateName={negativeTemplateName}
-          negativeFileNames={negativeFileNames}
-          bmiExcludedSuppliers={bmiExcludedSuppliers}
-          onDraggingChange={setIsDragging}
-          onFile={handleFile}
-          onSelectInventoryTemplate={selectInventoryTemplate}
-          onInventoryTemplateFile={handleInventoryTemplate}
-          onInventoryData={handleInventoryData}
-          onInventoryPermissionDenied={() => setInventoryProcessStatus('Bạn chưa cấp quyền ghi file template')}
-          onNegativeTemplateFile={handleNegativeTemplateFile}
-          onNegativeDataFile={handleNegativeDataFile}
-          onBmiExcludedSuppliersChange={setBmiExcludedSuppliers}
-          onProcessNegativeReport={processNegativeReport}
-        />}
+          onNavigate={goTo}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
+        />
+        <main className="main-content">
+          <AppHeader
+            activePage={activePage}
+            sourceDate={sourceDate}
+            inventoryDate={inventoryDate}
+            onExport={exportReport}
+          />
+        {activePage !== 'overview' && (
+          <UploadPanel
+            activePage={activePage}
+            isDragging={isDragging}
+            isProcessing={isProcessing}
+            inventoryTemplateName={inventoryTemplateName}
+            inventoryDataName={inventoryDataName}
+            templateHandle={templateHandle}
+            negativeTemplateName={negativeTemplateName}
+            negativeFileNames={negativeFileNames}
+            bmiExcludedSuppliers={bmiExcludedSuppliers}
+            onDraggingChange={setIsDragging}
+            onFile={handleFile}
+            onSelectInventoryTemplate={selectInventoryTemplate}
+            onInventoryTemplateFile={handleInventoryTemplate}
+            onInventoryData={handleInventoryData}
+            onInventoryPermissionDenied={() => setInventoryProcessStatus('Bạn chưa cấp quyền ghi file template')}
+            onNegativeTemplateFile={handleNegativeTemplateFile}
+            onNegativeDataFile={handleNegativeDataFile}
+            onBmiExcludedSuppliersChange={setBmiExcludedSuppliers}
+            onProcessNegativeReport={processNegativeReport}
+          />
+        )}
    
         <ProcessBanner status={currentStatus} isProcessing={isProcessing} />
         {pageContent}
-        <footer><span>© 2026 CM Đà Nẵng Reporting</span><span><i></i> Hệ thống hoạt động bình thường</span><span>v1.4.2</span></footer>
+        <footer className="app-footer">
+          <div className="footer-left">
+            <span>© 2026 Co.opmart Đà Nẵng — Hệ thống báo cáo & xử lý ERP</span>
+          </div>
+          <div className="footer-right">
+            <span className="footer-status-pill">
+              <span className="status-ping"></span>
+              <span>Trạng thái máy chủ: Ổn định</span>
+            </span>
+            <span className="footer-version">Phiên bản 2.0 Enterprise</span>
+          </div>
+        </footer>
       </main>
     </div>
+    </>
   )
 
 }

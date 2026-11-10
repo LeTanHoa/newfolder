@@ -211,7 +211,7 @@ const writeSourceHeaders = (sheet, headers, headerRow = 1) => {
 // Giữ export cũ để tương thích ngược nếu có chỗ khác đang import tên này.
 export const copyWorkbookFirstSheetTo = (sourceBuffer, targetSheet) => copySourceSheetTo(sourceBuffer, targetSheet)
 
-export const negativeGroupSheets = { 1: 'TPTS', 2: 'TPCN', 3: 'HMP', 4: 'DD', 5: 'MM' }
+export const negativeGroupSheets = { 1: 'TPTS', 2: 'TPCN', 3: 'HMP', 4: 'DD', 5: 'MM', 6: 'BM' }
 
 // Cấu hình loại trừ khớp với trang "Cấu hình mapping" của app:
 // - excludedDepartments: các cặp "Dept-SubDept" bị loại khỏi tính tồn âm (mặc định "146-20" theo
@@ -563,8 +563,10 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
 
     let outputRow = 2
     for (let sourceRow = 2; sourceRow <= getLastRow(newSheet); sourceRow += 1) {
-      const sourceCode = String(toNumber(getCellText(newSheet.getCell(sourceRow, 1))) || getCellText(newSheet.getCell(sourceRow, 1)).trim())
-      if (sourceCode !== String(code)) continue
+      const rawCode = getCellText(newSheet.getCell(sourceRow, 1)).trim()
+      const sourceCode = String(toNumber(rawCode) || rawCode.replace(/^NH/i, '').trim())
+      const targetCode = String(code).replace(/^NH/i, '').trim()
+      if (sourceCode !== targetCode) continue
       for (let col = 1; col <= outputHeader.length; col += 1) {
         copyCellFromMaster(newSheet.getCell(sourceRow, col), targetSheet.getCell(outputRow, col))
       }
@@ -615,7 +617,26 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
     }
   }
 
-  // 8) Tên NCC để hiển thị trên UI (không ghi vào các sheet Excel vì template không có cột này) —
+  // 8) Xóa bỏ các dòng "Không còn tồn âm" trong sheet SKU Ton Am Old sau khi xử lý xong
+  const resolvedSkuKeys = new Set(
+    negativeEntries
+      .filter((entry) => entry.note === 'Không còn tồn âm')
+      .map((entry) => getSkuKey(entry.sku))
+  )
+  const oldNoteCol = findColumnInSheet(oldSheet, ['Ghi chú', 'Ghi chu', 'Note'], oldHeader.row)
+  const lastOldRow = getLastRow(oldSheet)
+  for (let row = lastOldRow; row >= oldHeader.row + 1; row -= 1) {
+    const sku = getCellText(oldSheet.getCell(row, oldHeader.column)).trim()
+    const noteText = oldNoteCol ? getCellText(oldSheet.getCell(row, oldNoteCol)).trim() : ''
+    const isNoteResolved = normalizeKey(noteText).includes('khongcontonam')
+    const isSkuResolved = sku && resolvedSkuKeys.has(getSkuKey(sku))
+
+    if (isNoteResolved || isSkuResolved) {
+      oldSheet.spliceRows(row, 1)
+    }
+  }
+
+  // 9) Tên NCC để hiển thị trên UI (không ghi vào các sheet Excel vì template không có cột này) —
   //    tra theo Mã NCC qua chính file DS NCC TT THEO BCBH nếu có (best-effort, có thể để trống
   //    với NCC không nằm trong danh sách BCBH).
   const supplierDisplayMap = new Map()
@@ -636,7 +657,7 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
   const negativeRows = sortedNegativeEntries.map((entry) => ({
     sku: entry.sku,
     name: entry.name,
-    group: negativeGroupSheets[entry.code5] || 'KHÁC',
+    group: negativeGroupSheets[String(entry.code5).replace(/^NH/i, '').trim()] || 'KHÁC',
     stock: entry.current,
     delta: entry.current - entry.oldStock,
     code5: entry.code5,
@@ -650,7 +671,10 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
     negativeCount: currentNegativeCount,
     negativeRows,
     groupCounts: Object.fromEntries(
-      Object.entries(negativeGroupSheets).map(([code, name]) => [name, negativeRows.filter((row) => row.code5 === code).length]),
+      Object.entries(negativeGroupSheets).map(([code, name]) => [
+        name,
+        negativeRows.filter((row) => String(row.code5).replace(/^NH/i, '').trim() === String(code)).length
+      ]),
     ),
     previousLabel,
     currentLabel,
