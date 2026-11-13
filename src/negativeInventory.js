@@ -436,8 +436,8 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
 
     const existingEntry = oldEntriesBySku.get(skuKey)
     if (existingEntry) {
-      // Nếu file nguồn có nhiều dòng cho cùng SKU, phải cộng trước khi so sánh.
-      existingEntry.current += oldStock
+      // Không cộng dồn số liệu tồn kho, chỉ lấy dữ liệu dòng mới nhất
+      existingEntry.current = oldStock
       continue
     }
     oldEntriesBySku.set(skuKey, {
@@ -468,7 +468,8 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
 
     const existingEntry = currentEntriesBySku.get(skuKey)
     if (existingEntry) {
-      existingEntry.current += current
+      // Không cộng dồn số liệu tồn kho, chỉ lấy dữ liệu dòng mới nhất
+      existingEntry.current = current
       continue
     }
     const code5Value = getCellText(allSheet.getCell(row, allCodeCol)).trim()

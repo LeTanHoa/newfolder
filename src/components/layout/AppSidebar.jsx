@@ -104,8 +104,8 @@ export default function AppSidebar({ activePage, onNavigate, isCollapsed, onTogg
           <div className="user-profile-bar">
             <div className="user-avatar-circle">AD</div>
             <div className="user-details">
-              <strong>Admin Phân Tích</strong>
-              <small>bophan.ketoan@cm.vn</small>
+              <strong>BP VI TÍNH</strong>
+              <small>cmdanang@coopmart.vn</small>
             </div>
           </div>
         </div>
