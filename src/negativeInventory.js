@@ -93,10 +93,9 @@ const fillHeaderRow = (sheet, columnCount = sheet.columnCount || 1) => {
   }
 }
 
-// Tách phần "DD/MM" ở CUỐI một chuỗi header, ví dụ "SL Tồn 23/08" -> { day: 23, month: 8 }.
-// Không dùng normalizeKey ở đây vì normalizeKey đã loại bỏ dấu "/".
+// Tách phần ngày "DD/MM" hoặc "DD/MM/YYYY" từ chuỗi header
 const extractDateSuffix = (text) => {
-  const match = String(text ?? '').match(/(\d{1,2})\s*\/\s*(\d{1,2})\s*$/)
+  const match = String(text ?? '').match(/(?:^|\D)(\d{1,2})[/.-](\d{1,2})(?:[/.-]\d{2,4})?(?:\D|$)/)
   if (!match) return null
   const day = Number(match[1])
   const month = Number(match[2])
@@ -115,27 +114,44 @@ const parseDateFromFileName = (fileName) => {
   return date
 }
 
-// Sheet "SKU Ton Am Old" là kết quả "SKU TON AM NEW" của lần chạy TRƯỚC, nên tên cột luôn có
-// hậu tố ngày động (vd "Tồn 22/08", "SL Tồn 23/08"). Hàm này tìm đúng cột có ngày GẦN NHẤT
-// (tức là cột phản ánh tồn kho "hôm qua" so với lần chạy hiện tại), đồng thời trả về luôn
-// ngày đó để tự suy ra nhãn cột cho báo cáo hôm nay — không cần người dùng nhập ngày thủ công.
-const findLatestDateColumn = (sheet, headerRow, basePrefixes) => {
+// Sheet "SKU Ton Am Old" là sheet từ file hôm trước (thường có 2 cột tồn: tồn hôm kia và tồn hôm qua).
+// Trong công thức thực tế của người dùng:
+// =VLOOKUP(G2,'SKU Ton Am old'!$G$2:$J$1500,4,0)
+// Cột tồn hôm qua được lấy chính xác là cột thứ 4 trong range G:J (cột SKU + 3 = cột J).
+// Hàm này ưu tiên đúng cột SKU + 3, hoặc cột có ngày mới nhất / cột Tồn nằm bên phải nhất.
+const findLatestDateColumn = (sheet, headerRow, basePrefixes, preferredOffsetCol = null) => {
   const bases = basePrefixes.map(normalizeKey)
   const row = sheet.getRow(headerRow)
   const maxCol = Math.max(row.cellCount || 0, sheet.columnCount || 0, 50)
-  let best = null
+  const matches = []
+
   for (let col = 1; col <= maxCol; col += 1) {
-    const raw = getCellText(row.getCell(col))
+    const raw = getCellText(row.getCell(col)).trim()
     if (!raw) continue
-    const dateSuffix = extractDateSuffix(raw)
-    const withoutDate = raw.replace(/(\d{1,2})\s*\/\s*(\d{1,2})\s*$/, '').trim()
-    const normalizedBase = normalizeKey(withoutDate || raw)
-    const matchesBase = bases.some((base) => normalizedBase.startsWith(base) || (normalizedBase && base.startsWith(normalizedBase)))
+    const normalized = normalizeKey(raw)
+    const matchesBase = bases.some((base) => normalized.includes(base))
     if (!matchesBase) continue
-    const score = dateSuffix ? dateSuffix.month * 100 + dateSuffix.day : -1
-    if (!best || score > best.score) best = { column: col, score, date: dateSuffix }
+    const dateSuffix = extractDateSuffix(raw)
+    const score = dateSuffix ? dateSuffix.month * 100 + dateSuffix.day : 0
+    matches.push({ column: col, score, date: dateSuffix, raw })
   }
-  return best
+
+  // Nếu cột SKU + 3 khớp đúng một trong các cột tồn, ưu tiên lấy ngay đúng vị trí này
+  if (preferredOffsetCol && preferredOffsetCol <= maxCol) {
+    const directMatch = matches.find((m) => m.column === preferredOffsetCol)
+    if (directMatch) return directMatch
+  }
+
+  if (!matches.length) {
+    if (preferredOffsetCol && preferredOffsetCol <= maxCol) {
+      return { column: preferredOffsetCol, score: 0, date: null }
+    }
+    return null
+  }
+
+  // Ưu tiên cột có score ngày cao nhất; nếu bằng nhau hoặc không có ngày, lấy cột nằm bên phải nhất (col lớn nhất)
+  matches.sort((a, b) => (b.score - a.score) || (b.column - a.column))
+  return matches[0]
 }
 
 // Đọc 1 sheet từ file nguồn (buffer .xlsx/.xls). Nếu file có NHIỀU sheet (ví dụ người dùng lỡ
@@ -223,11 +239,14 @@ export const excludedDepartments = ['146-20']
 export const excludedSupplierNames = []
 
 const buildNote = (oldStock, current) => {
-  if (oldStock < 0 && current >= 0) return 'Không còn tồn âm'
+  // J2: Tồn hôm nay (current), I2: Tồn hôm trước (oldStock)
+  // Khớp chính xác 100% công thức Excel của quy trình thực tế:
+  // =IF(J2=0,"Không còn tồn âm",IF(I2=0,"Mới phát sinh",IF(J2-I2<0,"Tăng",IF(J2-I2=0,"Không thay đổi","Giảm"))))
+  if (current === 0) return 'Không còn tồn âm'
   if (oldStock === 0) return 'Mới phát sinh'
-  if (current < oldStock) return 'Tăng'
-  if (current > oldStock) return 'Giảm'
-  return 'Không thay đổi'
+  if (current - oldStock < 0) return 'Tăng'
+  if (current - oldStock === 0) return 'Không thay đổi'
+  return 'Giảm'
 }
 
 export const processNegativeInventoryReport = async (templateBuffer, files) => {
@@ -365,10 +384,10 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
     bmiSheet.getCell(bmiTotalRow, bmiValueCol).numFmt = '#,##0'
   }
 
-  // 3) Tồn kho hôm qua: tra theo đúng cột SKU của SKU Ton Am Old (KHÔNG dùng cột SKU của ALL —
-  //    đây là lỗi đã sửa so với bản trước). Đồng thời tự suy ra ngày báo cáo hôm nay/hôm qua từ
-  //    chính tên cột ngày gần nhất có trong sheet này.
-  const oldStockCol = findLatestDateColumn(oldSheet, oldHeader.row, ['SL Tồn', 'Tồn'])
+  // 3) Tồn kho hôm qua: tra theo đúng cột SKU của SKU Ton Am Old.
+  // Khớp chính xác với công thức Excel: =VLOOKUP(G2,'SKU Ton Am old'!$G$2:$J$1500,4,0)
+  // Cột tồn hôm qua là cột thứ 4 của range G..J (tức cột oldHeader.column + 3 = cột J).
+  const oldStockCol = findLatestDateColumn(oldSheet, oldHeader.row, ['SL Tồn', 'Tồn', 'Ton'], oldHeader.column + 3)
   if (!oldStockCol) throw new Error('Không tìm thấy cột tồn kho (dạng "Tồn DD/MM") trong SKU Ton Am Old')
 
   let previousDate = parseDateFromFileName(files.yesterdayStockName) || new Date(Date.now() - 86400000)
@@ -391,7 +410,8 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
   const oldNameCol = findColumnInSheet(oldSheet, ['Tên hàng', 'Ten hang', 'Tên sản phẩm'], oldHeader.row)
   const oldNoteCol = findColumnInSheet(oldSheet, ['Ghi chú', 'Ghi chu', 'Note', 'Trạng thái'], oldHeader.row)
 
-  // Loại bỏ các dòng "Không còn tồn âm" hoặc không âm (tồn >= 0) trong file tồn âm cũ trước khi đưa qua so sánh
+  // Quy trình chuẩn Excel: Sau khi nạp sheet SKU ton am old từ ngày hôm trước,
+  // xóa bớt các SKU "Không còn tồn âm" (hoặc tồn >= 0) có sẵn từ trước.
   const initialOldLastRow = getLastRow(oldSheet)
   for (let row = initialOldLastRow; row >= oldHeader.row + 1; row -= 1) {
     const sku = getCellText(oldSheet.getCell(row, oldHeader.column)).trim()
@@ -404,6 +424,7 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
     }
   }
 
+  // Đọc danh sách SKU âm thực sự của ngày hôm trước vào Map để so sánh
   const oldEntriesBySku = new Map()
   for (let row = oldHeader.row + 1; row <= getLastRow(oldSheet); row += 1) {
     const sku = getCellText(oldSheet.getCell(row, oldHeader.column)).trim()
@@ -411,7 +432,7 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
     const skuKey = getSkuKey(sku)
     const oldCode5Value = getCellText(oldSheet.getCell(row, oldCode5Col)).trim()
     const oldStock = toNumber(getCellText(oldSheet.getCell(row, oldStockCol.column)))
-    if (oldStock >= 0) continue
+    const oldNote = oldNoteCol ? getCellText(oldSheet.getCell(row, oldNoteCol)).trim() : ''
 
     const existingEntry = oldEntriesBySku.get(skuKey)
     if (existingEntry) {
@@ -429,10 +450,13 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
       sku,
       name: getSheetValue(oldSheet, row, oldNameCol),
       current: oldStock,
+      oldNote,
     })
   }
 
+  // 4) Đọc dữ liệu tồn kho hôm nay từ sheet ALL
   const negativeEntries = []
+  const resolvedSkuKeys = new Set()
   const currentEntriesBySku = new Map()
   for (let row = allHeader.row + 1; row <= getLastRow(allSheet); row += 1) {
     const sku = getCellText(allSheet.getCell(row, allHeader.column)).trim()
@@ -462,35 +486,53 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
     })
   }
 
-  // Full join theo SKU: vừa có SKU âm mới, vừa giữ SKU âm hôm qua nhưng hiện tại đã hết âm.
+  // 5) So sánh giữa SKU Ton Am Old và tồn kho hôm nay (ALL)
   currentEntriesBySku.forEach((entry, skuKey) => {
     if (entry.current >= 0) return
-    const oldStock = oldEntriesBySku.get(skuKey)?.current ?? 0
+    const oldEntry = oldEntriesBySku.get(skuKey)
+    const oldStock = oldEntry?.current ?? 0
     negativeEntries.push({ ...entry, oldStock, note: buildNote(oldStock, entry.current) })
   })
 
   oldEntriesBySku.forEach((entry, skuKey) => {
     const currentEntry = currentEntriesBySku.get(skuKey)
-    if (entry.current >= 0 || currentEntry?.current < 0) return
-    const rawCurrent = currentEntry?.current ?? 0
-    const note = buildNote(entry.current, rawCurrent)
-    // Các giá trị không còn tồn âm thì không được dương, phải là số 0 so với ngày hôm trước
-    const current = (note === 'Không còn tồn âm' || rawCurrent > 0) ? 0 : rawCurrent
+    // Nếu hôm trước đã không âm hoặc note là "Không còn tồn âm" từ trước thì đánh dấu resolved để dọn dẹp ở oldSheet
+    if (entry.current >= 0 || normalizeKey(entry.oldNote).includes('khongcontonam')) {
+      resolvedSkuKeys.add(skuKey)
+      return
+    }
+    // Nếu hôm nay vẫn âm (< 0) thì đã được xử lý ở nhánh currentEntriesBySku bên trên
+    if (currentEntry?.current < 0) return
+
+    // Hôm trước âm (entry.current < 0) nhưng hôm nay đã hết âm (current >= 0 hoặc không còn xuất hiện trong ALL)
+    resolvedSkuKeys.add(skuKey)
     negativeEntries.push({
       ...entry,
       oldStock: entry.current,
-      current,
-      note,
+      current: 0,
+      note: 'Không còn tồn âm',
       supplierName: '',
     })
   })
 
-  // Đảm bảo dứt điểm: mọi SKU có ghi chú "Không còn tồn âm" thì tồn ngày hiện tại không được dương mà phải là 0
-  negativeEntries.forEach((entry) => {
-    if (entry.note === 'Không còn tồn âm' || entry.current > 0) {
-      entry.current = 0
+  // 6) Sau khi so sánh xong: Loại bỏ các dòng "Không còn tồn âm" trong sheet SKU Ton Am Old
+  const lastOldRow = getLastRow(oldSheet)
+  for (let row = lastOldRow; row >= oldHeader.row + 1; row -= 1) {
+    const sku = getCellText(oldSheet.getCell(row, oldHeader.column)).trim()
+    const skuKey = getSkuKey(sku)
+    const noteText = oldNoteCol ? getCellText(oldSheet.getCell(row, oldNoteCol)).trim() : ''
+    const isNoteResolved = normalizeKey(noteText).includes('khongcontonam')
+    const isSkuResolved = sku && resolvedSkuKeys.has(skuKey)
+
+    if (isNoteResolved || isSkuResolved) {
+      oldSheet.spliceRows(row, 1)
     }
-  })
+  }
+
+  // 7) Giữ lại tất cả dữ liệu tồn âm hôm nay và các SKU "Không còn tồn âm" cho sheet SKU TON AM NEW
+  const sortedNegativeEntries = [...negativeEntries].sort((left, right) => (
+    left.note.localeCompare(right.note, 'vi') || left.current - right.current
+  ))
 
   const currentNegativeCount = negativeEntries.filter((entry) => entry.current < 0).length
   const outputHeader = ['Mã 5NH', 'Dept.', 'Sub Dept.', 'Class', 'Sub Class', 'Mã NCC', 'SKU', 'Tên Hàng', `Tồn ${previousLabel}`, `Tồn ${currentLabel}`, 'PH BGD', 'Ghi chú']
@@ -540,9 +582,6 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
     const column = sheet.getColumn(noteColumn)
     column.style = { ...column.style, fill: noFill }
   }
-  const sortedNegativeEntries = [...negativeEntries].sort((left, right) => (
-    left.note.localeCompare(right.note, 'vi') || left.current - right.current
-  ))
 
   const writeEntriesToSheet = (targetSheet, entries) => {
     // Giữ nguyên layout, định dạng, merge và công thức của template; chỉ thay dữ liệu đầu ra.
@@ -643,25 +682,7 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
     }
   }
 
-  // 8) Xóa bỏ các dòng "Không còn tồn âm" trong sheet SKU Ton Am Old sau khi xử lý xong
-  const resolvedSkuKeys = new Set(
-    negativeEntries
-      .filter((entry) => entry.note === 'Không còn tồn âm')
-      .map((entry) => getSkuKey(entry.sku))
-  )
-  const lastOldRow = getLastRow(oldSheet)
-  for (let row = lastOldRow; row >= oldHeader.row + 1; row -= 1) {
-    const sku = getCellText(oldSheet.getCell(row, oldHeader.column)).trim()
-    const noteText = oldNoteCol ? getCellText(oldSheet.getCell(row, oldNoteCol)).trim() : ''
-    const isNoteResolved = normalizeKey(noteText).includes('khongcontonam')
-    const isSkuResolved = sku && resolvedSkuKeys.has(getSkuKey(sku))
-
-    if (isNoteResolved || isSkuResolved) {
-      oldSheet.spliceRows(row, 1)
-    }
-  }
-
-  // 9) Tên NCC để hiển thị trên UI (không ghi vào các sheet Excel vì template không có cột này) —
+  // 8) Tên NCC để hiển thị trên UI (không ghi vào các sheet Excel vì template không có cột này) —
   //    tra theo Mã NCC qua chính file DS NCC TT THEO BCBH nếu có (best-effort, có thể để trống
   //    với NCC không nằm trong danh sách BCBH).
   const supplierDisplayMap = new Map()

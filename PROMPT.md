@@ -65,31 +65,32 @@ Hệ thống phân loại theo `Mã 5NH` (1 chữ số hoặc prefix `NH`):
 Xử lý đối chiếu chéo phức hợp giữa **1 Template Excel mẫu** (`SKU TON AM CM.xlsx`) và **4 File dữ liệu nguồn**:
 1. **Template mẫu**: Chứa các sheet `ALL`, `SKU Ton Am Old`, `SKU TON AM NEW`, `TONG HOP`, `TON KHO MM`, `TON KHO BMI`, `DS NCC TT THEO BCBH`, `TPTS`, `TPCN`, `HMP`, `DD`, `MM`.
 2. **File nguồn 1 (Tồn kho đầu ngày)**: Đổ dữ liệu thô vào sheet `ALL`.
-3. **File nguồn 2 (SKU tồn âm hôm qua)**: Đổ vào sheet `SKU Ton Am Old`. Tự động quét tìm cột có hậu tố ngày gần nhất (dạng `Tồn DD/MM` hoặc `SL Tồn DD/MM`) để làm mốc đối chiếu hôm qua. **Hệ thống tự động loại bỏ ngay các dòng không còn tồn âm (ghi chú "Không còn tồn âm" hoặc số tồn >= 0) trong file tồn âm cũ trước khi đưa vào tập dữ liệu so sánh**.
+3. **File nguồn 2 (SKU tồn âm hôm qua)**: Đổ nguyên vẹn vào sheet `SKU Ton Am Old`. Tự động quét tìm cột có hậu tố ngày gần nhất (dạng `Tồn DD/MM` hoặc `SL Tồn DD/MM`) để làm mốc đối chiếu hôm qua.
 4. **File nguồn 3 (Tỉ lệ tồn âm)**: Đổ vào sheet `TONG HOP`.
 5. **File nguồn 4 (Tồn kho may mặc)**: Đổ vào sheet `TON KHO MM`. Lọc lấy các NCC có mã nằm trong danh sách VENDOR của sheet `DS NCC TT THEO BCBH`, bỏ các dòng "N/A", cộng tổng dòng `TỔNG CỘNG` ở cuối bảng để lấy ra giá trị `bcbhMmInventoryTotal`.
-- **Tạo Sheet `SKU TON AM NEW`**:
-  - Duyệt qua từng SKU trong sheet `ALL` và `SKU Ton Am Old`.
+- **Quy trình so sánh và tạo Sheet `SKU TON AM NEW`**:
+  - Đối chiếu toàn bộ SKU giữa `SKU Ton Am Old` và `ALL` (tồn kho mới hôm nay).
   - Loại trừ các mã Dept thuộc diện không tính tồn âm (mặc định Dept `146-20`).
   - Gắn nhãn biến động tồn (`buildNote`):
-    * `oldStock < 0 && current >= 0` -> *"Không còn tồn âm"* (giá trị tồn của ngày hôm nay so với hôm trước **không được để số dương mà phải ghi là 0**)
-    * `oldStock === 0` -> *"Mới phát sinh"*
-    * `current < oldStock` -> *"Tăng"*
-    * `current > oldStock` -> *"Giảm"*
-    * Ngược lại -> *"Không thay đổi"*
-  - Phân bổ SKU còn tồn âm vào các sheet ngành hàng:
+    * `oldStock < 0 && current >= 0` -> Xác định là *"Không còn tồn âm"*.
+    * `oldStock === 0` -> *"Mới phát sinh"*.
+    * `current < oldStock` -> *"Tăng"*.
+    * `current > oldStock` -> *"Giảm"*.
+    * Ngược lại -> *"Không thay đổi"*.
+  - **Làm sạch `SKU Ton Am Old`**: Xóa bỏ các dòng "Không còn tồn âm" khỏi sheet `SKU Ton Am Old` sau khi đã hoàn tất so sánh đối chiếu.
+  - **Giữ lại "Không còn tồn âm" trong `SKU TON AM NEW`**: Toàn bộ dữ liệu tồn âm hôm nay cùng các SKU *"Không còn tồn âm"* được giữ lại và đưa vào sheet `SKU TON AM NEW` (trong đó SKU không còn tồn âm có tồn hôm nay bằng `0`, tồn hôm trước giữ nguyên giá trị âm cũ, ghi chú màu xanh lá).
+  - **Tiếp tục phân bổ dữ liệu sang các sheet ngành**: Từ `SKU TON AM NEW`, tiếp tục sao chép sang các sheet ngành theo Mã 5NH (kèm đầy đủ cả các dòng không còn tồn âm tương ứng của ngành đó):
     * Mã 1 -> sheet `TPTS`
     * Mã 2 -> sheet `TPCN`
     * Mã 3 -> sheet `HMP`
     * Mã 4 -> sheet `DD`
     * Mã 5 -> sheet `MM`
     * Mã 6 -> sheet `BM` (Bách hóa mới)
+  - Cập nhật lại bảng `TONG HOP` từ dữ liệu đã phân bổ.
 - **Tạo Sheet `TON KHO BMI`**:
   - Trích xuất từ sheet `ALL` các dòng có `Mã 5NH = 6`.
   - Tự động loại trừ các NCC: `17203`, `22478` và các mã NCC do người dùng nhập thêm trên giao diện.
   - Tính tổng cộng giá trị tồn BMI và lưu vào bộ nhớ cache.
-- **Dọn dẹp Sheet `SKU Ton Am Old` sau khi thực hiện xong**:
-  - Tự động quét và xóa bỏ toàn bộ các dòng có ghi chú hoặc trạng thái *"Không còn tồn âm"* (các SKU hôm qua âm nhưng hôm nay tồn kho đã >= 0) để làm sạch sheet cho các kỳ đối chiếu tiếp theo.
 - **Xuất file**: `TON KHO AM DDMMYYYY.xlsx`.
 
 ### Phân hệ 4: Dashboard Tổng Quan & Cấu Hình Mapping

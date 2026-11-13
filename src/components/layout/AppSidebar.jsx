@@ -4,7 +4,6 @@ import {
   IconMargin,
   IconNegative,
   IconInventory,
-  IconSettings,
   IconChevronRight
 } from '../icons'
 
@@ -23,12 +22,12 @@ const navGroups = [
       { page: 'inventory', icon: IconInventory, label: 'Tồn kho theo ngày', badge: null }
     ]
   },
-  {
-    title: 'HỆ THỐNG',
-    items: [
-      { page: 'mapping', icon: IconSettings, label: 'Cấu hình mapping', badge: null }
-    ]
-  }
+  // {
+  //   title: 'HỆ THỐNG',
+  //   items: [
+  //     { page: 'mapping', icon: IconSettings, label: 'Cấu hình mapping', badge: null }
+  //   ]
+  // }
 ]
 
 export default function AppSidebar({ activePage, onNavigate, isCollapsed, onToggleCollapse }) {
@@ -42,8 +41,7 @@ export default function AppSidebar({ activePage, onNavigate, isCollapsed, onTogg
           </div>
           {!isCollapsed && (
             <div className="brand-text">
-              <span className="brand-title">Siêu Thị Co.opmart</span>
-              <span className="brand-subtitle">CHI NHÁNH ĐÀ NẴNG</span>
+              <span className="brand-title">Co.opmart Đà Nẵng</span>
             </div>
           )}
         </div>
