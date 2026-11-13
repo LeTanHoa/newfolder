@@ -38,7 +38,7 @@ function NegativeTable({ rows }) {
                 <span className="sheet-tag">{row.group || 'Chung'}</span>
               </td>
               <td className="text-right numeric-cell font-mono">
-                <span className="negative-badge">
+                <span className={row.stock < 0 ? 'negative-badge' : 'resolved-badge'}>
                   {row.stock} sp
                 </span>
               </td>

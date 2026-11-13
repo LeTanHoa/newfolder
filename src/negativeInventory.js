@@ -389,6 +389,20 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
   const oldSubClassCol = findColumnInSheet(oldSheet, ['Sub Class'], oldHeader.row)
   const oldSupplierCodeCol = findColumnInSheet(oldSheet, ['Mã NCC', 'Ma NCC'], oldHeader.row)
   const oldNameCol = findColumnInSheet(oldSheet, ['Tên hàng', 'Ten hang', 'Tên sản phẩm'], oldHeader.row)
+  const oldNoteCol = findColumnInSheet(oldSheet, ['Ghi chú', 'Ghi chu', 'Note', 'Trạng thái'], oldHeader.row)
+
+  // Loại bỏ các dòng "Không còn tồn âm" hoặc không âm (tồn >= 0) trong file tồn âm cũ trước khi đưa qua so sánh
+  const initialOldLastRow = getLastRow(oldSheet)
+  for (let row = initialOldLastRow; row >= oldHeader.row + 1; row -= 1) {
+    const sku = getCellText(oldSheet.getCell(row, oldHeader.column)).trim()
+    if (!sku) continue
+    const oldStock = toNumber(getCellText(oldSheet.getCell(row, oldStockCol.column)))
+    const noteText = oldNoteCol ? getCellText(oldSheet.getCell(row, oldNoteCol)).trim() : ''
+    const isAlreadyNotNegative = normalizeKey(noteText).includes('khongcontonam') || oldStock >= 0
+    if (isAlreadyNotNegative) {
+      oldSheet.spliceRows(row, 1)
+    }
+  }
 
   const oldEntriesBySku = new Map()
   for (let row = oldHeader.row + 1; row <= getLastRow(oldSheet); row += 1) {
@@ -397,6 +411,8 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
     const skuKey = getSkuKey(sku)
     const oldCode5Value = getCellText(oldSheet.getCell(row, oldCode5Col)).trim()
     const oldStock = toNumber(getCellText(oldSheet.getCell(row, oldStockCol.column)))
+    if (oldStock >= 0) continue
+
     const existingEntry = oldEntriesBySku.get(skuKey)
     if (existingEntry) {
       // Nếu file nguồn có nhiều dòng cho cùng SKU, phải cộng trước khi so sánh.
@@ -456,14 +472,24 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
   oldEntriesBySku.forEach((entry, skuKey) => {
     const currentEntry = currentEntriesBySku.get(skuKey)
     if (entry.current >= 0 || currentEntry?.current < 0) return
-    const current = currentEntry?.current ?? 0
+    const rawCurrent = currentEntry?.current ?? 0
+    const note = buildNote(entry.current, rawCurrent)
+    // Các giá trị không còn tồn âm thì không được dương, phải là số 0 so với ngày hôm trước
+    const current = (note === 'Không còn tồn âm' || rawCurrent > 0) ? 0 : rawCurrent
     negativeEntries.push({
       ...entry,
       oldStock: entry.current,
       current,
-      note: buildNote(entry.current, current),
+      note,
       supplierName: '',
     })
+  })
+
+  // Đảm bảo dứt điểm: mọi SKU có ghi chú "Không còn tồn âm" thì tồn ngày hiện tại không được dương mà phải là 0
+  negativeEntries.forEach((entry) => {
+    if (entry.note === 'Không còn tồn âm' || entry.current > 0) {
+      entry.current = 0
+    }
   })
 
   const currentNegativeCount = negativeEntries.filter((entry) => entry.current < 0).length
@@ -623,7 +649,6 @@ export const processNegativeInventoryReport = async (templateBuffer, files) => {
       .filter((entry) => entry.note === 'Không còn tồn âm')
       .map((entry) => getSkuKey(entry.sku))
   )
-  const oldNoteCol = findColumnInSheet(oldSheet, ['Ghi chú', 'Ghi chu', 'Note'], oldHeader.row)
   const lastOldRow = getLastRow(oldSheet)
   for (let row = lastOldRow; row >= oldHeader.row + 1; row -= 1) {
     const sku = getCellText(oldSheet.getCell(row, oldHeader.column)).trim()

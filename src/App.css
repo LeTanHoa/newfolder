@@ -1624,6 +1624,16 @@
   border: 1px solid var(--rose-100);
 }
 
+.resolved-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background-color: var(--primary-50);
+  color: var(--primary-700);
+  font-weight: 700;
+  border: 1px solid var(--primary-200);
+}
+
 .delta-badge {
   display: inline-block;
   padding: 2px 6px;

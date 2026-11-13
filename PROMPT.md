@@ -65,14 +65,14 @@ Hệ thống phân loại theo `Mã 5NH` (1 chữ số hoặc prefix `NH`):
 Xử lý đối chiếu chéo phức hợp giữa **1 Template Excel mẫu** (`SKU TON AM CM.xlsx`) và **4 File dữ liệu nguồn**:
 1. **Template mẫu**: Chứa các sheet `ALL`, `SKU Ton Am Old`, `SKU TON AM NEW`, `TONG HOP`, `TON KHO MM`, `TON KHO BMI`, `DS NCC TT THEO BCBH`, `TPTS`, `TPCN`, `HMP`, `DD`, `MM`.
 2. **File nguồn 1 (Tồn kho đầu ngày)**: Đổ dữ liệu thô vào sheet `ALL`.
-3. **File nguồn 2 (SKU tồn âm hôm qua)**: Đổ vào sheet `SKU Ton Am Old`. Tự động quét tìm cột có hậu tố ngày gần nhất (dạng `Tồn DD/MM` hoặc `SL Tồn DD/MM`) để làm mốc đối chiếu hôm qua.
+3. **File nguồn 2 (SKU tồn âm hôm qua)**: Đổ vào sheet `SKU Ton Am Old`. Tự động quét tìm cột có hậu tố ngày gần nhất (dạng `Tồn DD/MM` hoặc `SL Tồn DD/MM`) để làm mốc đối chiếu hôm qua. **Hệ thống tự động loại bỏ ngay các dòng không còn tồn âm (ghi chú "Không còn tồn âm" hoặc số tồn >= 0) trong file tồn âm cũ trước khi đưa vào tập dữ liệu so sánh**.
 4. **File nguồn 3 (Tỉ lệ tồn âm)**: Đổ vào sheet `TONG HOP`.
 5. **File nguồn 4 (Tồn kho may mặc)**: Đổ vào sheet `TON KHO MM`. Lọc lấy các NCC có mã nằm trong danh sách VENDOR của sheet `DS NCC TT THEO BCBH`, bỏ các dòng "N/A", cộng tổng dòng `TỔNG CỘNG` ở cuối bảng để lấy ra giá trị `bcbhMmInventoryTotal`.
 - **Tạo Sheet `SKU TON AM NEW`**:
   - Duyệt qua từng SKU trong sheet `ALL` và `SKU Ton Am Old`.
   - Loại trừ các mã Dept thuộc diện không tính tồn âm (mặc định Dept `146-20`).
   - Gắn nhãn biến động tồn (`buildNote`):
-    * `oldStock < 0 && current >= 0` -> *"Không còn tồn âm"*
+    * `oldStock < 0 && current >= 0` -> *"Không còn tồn âm"* (giá trị tồn của ngày hôm nay so với hôm trước **không được để số dương mà phải ghi là 0**)
     * `oldStock === 0` -> *"Mới phát sinh"*
     * `current < oldStock` -> *"Tăng"*
     * `current > oldStock` -> *"Giảm"*
