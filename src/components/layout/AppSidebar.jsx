@@ -18,7 +18,7 @@ const navGroups = [
     title: 'BÁO CÁO ERP',
     items: [
       { page: 'margin', icon: IconMargin, label: 'Tỉ lệ lãi âm', badge: null },
-      { page: 'negative', icon: IconNegative, label: 'Tồn kho âm', badge: 'Mới' },
+      { page: 'negative', icon: IconNegative, label: 'Tồn kho âm', badge: null },
       { page: 'inventory', icon: IconInventory, label: 'Tồn kho theo ngày', badge: null }
     ]
   },
